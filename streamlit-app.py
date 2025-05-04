@@ -3,128 +3,122 @@ import pandas as pd
 import requests
 import plotly.express as px
 
-# Set page config
-st.set_page_config(page_title="Credit Access in India", layout="wide")
+# Streamlit config
+st.set_page_config(page_title="UK Credit & Financial Inclusion", layout="wide")
+st.title("🇬🇧 Credit Access and Financial Inclusion in the UK")
 
-st.title("🇮🇳 Credit Access and Financial Inclusion in India (Dynamic Dashboard)")
+# Country code
+country = "GB"
 
-# Helper function to fetch World Bank data
+# World Bank Indicators and Labels
+indicators = {
+    "FS.AST.PRVT.GD.ZS": "Credit to Private Sector (% of GDP)",
+    "FX.OWN.TOTL.ZS": "Account Ownership (% of Adults)",
+    "FX.OWN.TOTL.FE.ZS": "Account Ownership (% of Women)",
+    "g20.made.t.d": "Mobile Account Usage (% of Firms)",
+    "FR.INR.LNDP": "Interest Rate Spread"
+}
+
 @st.cache_data(ttl=86400)
-def fetch_worldbank_data(indicator):
-    url = f"http://api.worldbank.org/v2/country/IN/indicator/{indicator}?format=json&per_page=100"
+def fetch_wb_data(indicator):
+    url = f"https://api.worldbank.org/v2/country/{country}/indicator/{indicator}?format=json&per_page=100"
     response = requests.get(url)
     if response.status_code == 200:
-        data = response.json()
-        if data and len(data) > 1:
-            df = pd.json_normalize(data[1])
-            df = df[['date', 'value']]
-            df.columns = ['Year', indicator]
-            df.dropna(inplace=True)
-            df['Year'] = df['Year'].astype(int)
-            return df.sort_values('Year')
-    return pd.DataFrame()
+        json_data = response.json()
+        if len(json_data) < 2:
+            return pd.DataFrame()
+        records = json_data[1]
+        df = pd.DataFrame([
+            {
+                "Year": int(row["date"]),
+                "Value": row["value"]
+            } for row in records if row["value"] is not None
+        ])
+        return df.sort_values("Year")
+    else:
+        return pd.DataFrame()
 
-# Load dynamic data
-credit_gdp_df = fetch_worldbank_data("FS.AST.PRVT.GD.ZS")  # Domestic credit to private sector
-account_access_df = fetch_worldbank_data("FX.OWN.TOTL.ZS")  # Account ownership
-female_access_df = fetch_worldbank_data("FX.OWN.TOTL.FE.ZS")  # Female account ownership
+# Create visualizations
+def plot_indicator(indicator_code, label):
+    df = fetch_wb_data(indicator_code)
+    if df.empty:
+        st.warning(f"No data available for {label}.")
+    else:
+        fig = px.line(df, x="Year", y="Value", markers=True,
+                      labels={"Year": "Year", "Value": label},
+                      title=label)
+        st.plotly_chart(fig, use_container_width=True)
 
-# Layout tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Overview", 
-    "Credit vs GDP", 
-    "Account Ownership", 
-    "Gender Gap", 
-    "Trend Analysis", 
-    "Recommendation"
+# Tabs
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "Overview",
+    "Credit to GDP",
+    "Account Ownership",
+    "Gender Inclusion",
+    "Mobile Finance",
+    "Interest Rate Spread",
+    "Recommendations"
 ])
 
 with tab1:
-    st.header("📌 Overview of Financial Inclusion Indicators")
+    st.header("📌 Overview")
     st.markdown("""
-    This dashboard visualizes the state of **credit provision** and **financial inclusion** in India using real-time data from the World Bank. 
-    We explore trends in credit-to-GDP ratio, account ownership among adults, and gender disparities in access to financial services.
-    
-    **Objective**: Provide data-backed, decision-oriented insights to improve financial inclusion and credit accessibility in India.
+    This dashboard provides a real-time view of credit accessibility and financial inclusion in the **United Kingdom**, powered by the World Bank Indicators API.
+    Key metrics tracked:
+    - Domestic credit to private sector
+    - Financial account ownership
+    - Mobile finance uptake
+    - Interest Rate Spread
     """)
 
 with tab2:
-    st.header("💰 Domestic Credit to Private Sector (% of GDP)")
-    if not credit_gdp_df.empty:
-        fig = px.line(credit_gdp_df, x="Year", y="FS.AST.PRVT.GD.ZS", 
-                      title="Domestic Credit to Private Sector (% of GDP)", markers=True)
-        st.plotly_chart(fig, use_container_width=True)
-        st.metric("Latest Value", 
-                  f"{credit_gdp_df.iloc[-1]['FS.AST.PRVT.GD.ZS']:.2f}%", 
-                  delta=f"{credit_gdp_df.iloc[-1]['FS.AST.PRVT.GD.ZS'] - credit_gdp_df.iloc[-2]['FS.AST.PRVT.GD.ZS']:.2f}")
-    else:
-        st.warning("Data not available.")
+    st.header("Credit to Private Sector")
+    plot_indicator("FS.AST.PRVT.GD.ZS", indicators["FS.AST.PRVT.GD.ZS"])
 
 with tab3:
-    st.header("🏦 Account Ownership (% of Adults 15+)")
-    if not account_access_df.empty:
-        fig = px.line(account_access_df, x="Year", y="FX.OWN.TOTL.ZS", 
-                      title="Account Ownership - Total Adult Population", markers=True)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("Data not available.")
+    st.header("Account Ownership")
+    plot_indicator("FX.OWN.TOTL.ZS", indicators["FX.OWN.TOTL.ZS"])
 
 with tab4:
-    st.header("👩‍🦰 Gender Gap in Account Ownership")
-    if not account_access_df.empty and not female_access_df.empty:
-        merged_df = pd.merge(account_access_df, female_access_df, on="Year", how="inner")
-        merged_df["Gender Gap"] = merged_df["FX.OWN.TOTL.ZS"] - merged_df["FX.OWN.TOTL.FE.ZS"]
-        fig = px.line(merged_df, x="Year", y=["FX.OWN.TOTL.ZS", "FX.OWN.TOTL.FE.ZS"], 
+    st.header("Gender Inclusion in Financial Access")
+    df_male = fetch_wb_data("FX.OWN.TOTL.MA.ZS")
+    df_female = fetch_wb_data("FX.OWN.TOTL.FE.ZS")
+    if not df_male.empty and not df_female.empty:
+        merged = pd.merge(df_male, df_female, on="Year", suffixes=("_Male", "_Female"))
+        merged["Gender Gap (%)"] = merged["Value_Male"] - merged["Value_Female"]
+        fig = px.line(merged, x="Year", y=["Value_Male", "Value_Female"],
                       labels={"value": "Account Ownership (%)", "variable": "Group"},
-                      title="Male vs Female Account Ownership", markers=True)
+                      title="Account Ownership: Male vs Women")
         st.plotly_chart(fig, use_container_width=True)
 
-        fig_gap = px.area(merged_df, x="Year", y="Gender Gap", title="Gender Gap Over Time")
-        st.plotly_chart(fig_gap, use_container_width=True)
+        gap_fig = px.area(merged, x="Year", y="Gender Gap (%)",
+                          title="Gender Gap in Account Ownership")
+        st.plotly_chart(gap_fig, use_container_width=True)
     else:
-        st.warning("Gender data not available.")
+        st.warning("Insufficient gender data available.")
 
 with tab5:
-    st.header("📈 Credit vs Financial Inclusion Correlation")
-    if not credit_gdp_df.empty and not account_access_df.empty:
-        merged_corr = pd.merge(credit_gdp_df, account_access_df, on="Year", how="inner")
-        fig_corr = px.scatter(merged_corr, 
-                              x="FX.OWN.TOTL.ZS", 
-                              y="FS.AST.PRVT.GD.ZS",
-                              trendline="ols",
-                              labels={
-                                  "FX.OWN.TOTL.ZS": "Account Ownership (%)", 
-                                  "FS.AST.PRVT.GD.ZS": "Credit to Private Sector (% of GDP)"
-                              },
-                              title="Relationship Between Account Access and Credit Provision")
-        st.plotly_chart(fig_corr, use_container_width=True)
-    else:
-        st.warning("Insufficient data to show correlation.")
+    st.header("Mobile Financial Usage")
+    plot_indicator("g20.made.t.d", indicators["g20.made.t.d"])
 
 with tab6:
-    st.header("✅ Actionable Recommendation")
+    st.header("Interest Rate Spread")
+    plot_indicator("FR.INR.LNDP", indicators["FR.INR.LNDP"])
+
+with tab7:
+    st.header("Recommendations")
     st.markdown("""
-    ### 🔍 Insight
-    While account ownership in India has improved markedly, **credit access remains comparatively constrained**. 
-    There's also a notable **gender gap** in financial services participation.
+    ### Insights
+    - UK credit to GDP is stable but slowly declining.
+    - Mobile and digital finance usage is gradually rising.
+    - Gender gaps in financial inclusion are small but exist.
+    - Physical bank infrastructure is declining - digital-first approaches are crucial.
 
-    ### 📌 Strategic Recommendations:
-    **1. Expand Inclusive Credit Infrastructure**
-    - Boost rural and small-town credit availability via digital KYC, microloans, and fintech partnerships.
-    - Incentivize banks and NBFCs to reach underbanked groups through targeted SLAs.
+    ### Strategic Recommendations
+    1. **Expand Mobile-First Financial Products** for sustainance and the underserved urban/rural segments.
+    2. **Close the Gender Gap** through personalized campaigns and services for women.
+    3. **Incentivize Fintech-Led Credit Solutions** using Open Banking and real-time data.
 
-    **2. Gender-Targeted Interventions**
-    - Deploy subsidized loan products tailored to **women-led MSMEs**.
-    - Fund community-based financial education programs focused on women.
-
-    **3. Build on Digital Rails**
-    - Use UPI and Aadhaar to simplify and fast-track loan disbursements.
-    - Enable alternative credit scoring (via bill payments, mobile top-ups) to reduce bias in loan decisions.
-
-    ### 🎯 Outcome
-    These measures can:
-    - Strengthen GDP-credit ratios,
-    - Improve equity in financial access,
-    - Support ESG-aligned sustainable development.
+    > Data current as of: **April 2025** via the World Bank Indicators API.
     """)
-    st.success("Insights based on World Bank data up to April 2025.")
+    st.success("Built for decision-makers in policy and financial innovation.")
